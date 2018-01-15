@@ -286,6 +286,9 @@ void trace_run_command(const struct child_process *cp)
 
 	strbuf_addf(&buf, "trace: run_command:");
 
+	if (cp->git_cmd)
+		strbuf_addstr(&buf, " git");
+
 	sq_quote_argv_pretty(&buf, cp->argv);
 	print_trace_line(&trace_default_key, &buf);
 	strbuf_release(&buf);
