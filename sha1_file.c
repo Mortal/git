@@ -322,15 +322,17 @@ static void fill_sha1_path(struct strbuf *buf, const unsigned char *sha1)
 	}
 }
 
-const char *sha1_file_name(const unsigned char *sha1)
+void sha1_file_name(struct strbuf *buf, const unsigned char *sha1)
 {
-	static struct strbuf buf = STRBUF_INIT;
+	const char *obj_dir = get_object_directory();
+	size_t extra = strlen(obj_dir) + 1 + GIT_MAX_HEXSZ;
 
-	strbuf_reset(&buf);
-	strbuf_addf(&buf, "%s/", get_object_directory());
+	if (extra > strbuf_avail(buf))
+		strbuf_grow(buf, extra);
 
-	fill_sha1_path(&buf, sha1);
-	return buf.buf;
+	strbuf_addstr(buf, obj_dir);
+	strbuf_addch(buf, '/');
+	fill_sha1_path(buf, sha1);
 }
 
 struct strbuf *alt_scratch_buf(struct alternate_object_database *alt)
@@ -711,7 +713,12 @@ int check_and_freshen_file(const char *fn, int freshen)
 
 static int check_and_freshen_local(const unsigned char *sha1, int freshen)
 {
-	return check_and_freshen_file(sha1_file_name(sha1), freshen);
+	static struct strbuf buf = STRBUF_INIT;
+
+	strbuf_reset(&buf);
+	sha1_file_name(&buf, sha1);
+
+	return check_and_freshen_file(buf.buf, freshen);
 }
 
 static int check_and_freshen_nonlocal(const unsigned char *sha1, int freshen)
@@ -867,8 +874,12 @@ static int stat_sha1_file(const unsigned char *sha1, struct stat *st,
 			  const char **path)
 {
 	struct alternate_object_database *alt;
+	static struct strbuf buf = STRBUF_INIT;
 
-	*path = sha1_file_name(sha1);
+	strbuf_reset(&buf);
+	sha1_file_name(&buf, sha1);
+	*path = buf.buf;
+
 	if (!lstat(*path, st))
 		return 0;
 
@@ -892,8 +903,12 @@ static int open_sha1_file(const unsigned char *sha1, const char **path)
 	int fd;
 	struct alternate_object_database *alt;
 	int most_interesting_errno;
+	static struct strbuf buf = STRBUF_INIT;
 
-	*path = sha1_file_name(sha1);
+	strbuf_reset(&buf);
+	sha1_file_name(&buf, sha1);
+	*path = buf.buf;
+
 	fd = git_open(*path);
 	if (fd >= 0)
 		return fd;
@@ -1573,9 +1588,12 @@ static int write_loose_object(const unsigned char *sha1, char *hdr, int hdrlen,
 	git_SHA_CTX c;
 	unsigned char parano_sha1[20];
 	static struct strbuf tmp_file = STRBUF_INIT;
-	const char *filename = sha1_file_name(sha1);
+	static struct strbuf filename = STRBUF_INIT;
 
-	fd = create_tmpfile(&tmp_file, filename);
+	strbuf_reset(&filename);
+	sha1_file_name(&filename, sha1);
+
+	fd = create_tmpfile(&tmp_file, filename.buf);
 	if (fd < 0) {
 		if (errno == EACCES)
 			return error("insufficient permission for adding an object to repository database %s", get_object_directory());
@@ -1628,7 +1646,7 @@ static int write_loose_object(const unsigned char *sha1, char *hdr, int hdrlen,
 			warning_errno("failed utime() on %s", tmp_file.buf);
 	}
 
-	return finalize_object_file(tmp_file.buf, filename);
+	return finalize_object_file(tmp_file.buf, filename.buf);
 }
 
 static int freshen_loose_object(const unsigned char *sha1)
